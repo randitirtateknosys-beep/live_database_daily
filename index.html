@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Presentasi - PT. Tirta Teknosys</title>
     
-    <!-- Chart.js & Firebase -->
+    <!-- Chart.js, Flatpickr & Firebase -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://www-d-gstatic-d-com-s-gmn.pixivcn.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www-d-gstatic-d-com-s-gmn.pixivcn.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
     <script src="https://www-d-gstatic-d-com-s-gmn.pixivcn.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -29,10 +32,13 @@
         body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg-main); color: var(--text-main); margin: 0; padding: 20px; }
         
         /* HEADER & KONTROL */
-        .header-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--blue-glow); padding-bottom: 15px; margin-bottom: 25px; }
+        .header-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--blue-glow); padding-bottom: 15px; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;}
         .header-title h1 { margin: 0; color: #fff; font-size: 26px; text-transform: uppercase; text-shadow: 0 0 15px rgba(56, 189, 248, 0.5); }
         .header-title p { color: var(--emerald-glow); font-weight: bold; margin-top: 5px; font-size: 13px; }
-        .btn-present { background: linear-gradient(135deg, #0284c7, #38bdf8); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 0 15px rgba(56,189,248,0.4); text-transform: uppercase; }
+        
+        .controls-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .filter-select, .filter-date { background: #0f172a; color: white; border: 1px solid var(--blue-glow); border-radius: 6px; padding: 8px 12px; font-size: 13px; font-weight: bold; cursor: pointer; outline: none;}
+        .btn-present { background: linear-gradient(135deg, #0284c7, #38bdf8); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 0 15px rgba(56,189,248,0.4); text-transform: uppercase; }
         
         /* SUMMARY CARDS */
         .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
@@ -82,7 +88,21 @@
             <h1>📊 Data Center & KPI Rekapitulasi</h1>
             <p>Monitor Aktual Produksi, Logistik & Performa Operator (Real-Time)</p>
         </div>
-        <div>
+        <div class="controls-group">
+            <label style="color:var(--blue-glow); font-weight:bold; font-size:13px;">Tampilkan Data:</label>
+            <select id="time-filter" class="filter-select" onchange="handleFilterChange()">
+                <option value="all">Keseluruhan Waktu</option>
+                <option value="today">Hari Ini</option>
+                <option value="week">Minggu Ini</option>
+                <option value="month">Bulan Ini</option>
+                <option value="year">Tahun Ini</option>
+                <option value="custom">Pilih Rentang (Custom)</option>
+            </select>
+            <div id="custom-date-group" style="display:none; align-items:center; gap:8px;">
+                <input type="text" id="start-date" class="filter-date" placeholder="Tanggal Mulai">
+                <span style="color:white; font-size:12px;">s/d</span>
+                <input type="text" id="end-date" class="filter-date" placeholder="Tanggal Akhir">
+            </div>
             <button class="btn-present" onclick="toggleFullScreen()">🖥️ Mode Presentasi</button>
         </div>
     </div>
@@ -250,7 +270,47 @@
 
 <script>
     // ==========================================
-    // 1. FIREBASE INITIALIZATION
+    // 1. SETUP FLATPICKR UNTUK FILTER CUSTOM DATE
+    // ==========================================
+    flatpickr("#start-date", { dateFormat: "Y-m-d", onChange: updateAllDashboards });
+    flatpickr("#end-date", { dateFormat: "Y-m-d", onChange: updateAllDashboards });
+
+    function handleFilterChange() {
+        const val = document.getElementById('time-filter').value;
+        document.getElementById('custom-date-group').style.display = (val === 'custom') ? 'flex' : 'none';
+        updateAllDashboards();
+    }
+
+    function isWithinFilter(timestampMs) {
+        if (!timestampMs) return false;
+        const filter = document.getElementById('time-filter').value;
+        if (filter === 'all') return true;
+
+        const d = new Date(timestampMs); 
+        const now = new Date();
+
+        if (filter === 'today') return d.toDateString() === now.toDateString();
+        else if (filter === 'week') { 
+            const start = new Date(now.setDate(now.getDate() - now.getDay())); 
+            start.setHours(0,0,0,0); 
+            return d >= start; 
+        } 
+        else if (filter === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        else if (filter === 'year') return d.getFullYear() === now.getFullYear();
+        else if (filter === 'custom') {
+            const startD = document.getElementById('start-date').value; 
+            const endD = document.getElementById('end-date').value;
+            if(!startD || !endD) return true; 
+            
+            const st = new Date(startD).setHours(0,0,0,0); 
+            const en = new Date(endD).setHours(23,59,59,999);
+            return timestampMs >= st && timestampMs <= en;
+        } 
+        return true; 
+    }
+
+    // ==========================================
+    // 2. FIREBASE INITIALIZATION
     // ==========================================
     const firebaseConfig = {
       apiKey: "AIzaSyAYvoe-2IbLgchTdsER5DgDxBOgjegAHJw",
@@ -277,7 +337,7 @@
     let chartKpiInst = null;
 
     // ==========================================
-    // 2. REAL-TIME LISTENERS
+    // 3. REAL-TIME LISTENERS
     // ==========================================
     db.ref('masterSPP').on('value', snap => {
         rawSPP = [];
@@ -299,13 +359,13 @@
     });
 
     // ==========================================
-    // 3. MAIN UPDATE FUNCTION
+    // 4. MAIN UPDATE FUNCTION
     // ==========================================
     function updateAllDashboards() {
         if(rawSPP.length === 0 && rawLogs.length === 0) return;
 
         calculateSummaryCards();
-        renderLiveUpdates();
+        renderLiveUpdates(); // Panel Live Operator & Live Pekerjaan
         renderTrendChart();
         renderStatusChart();
         renderKpiChart();
@@ -314,16 +374,20 @@
     }
 
     // ==========================================
-    // 4. CALCULATE KPI CARDS & PERCENTAGES
+    // 5. CALCULATE KPI CARDS & PERCENTAGES
     // ==========================================
     function calculateSummaryCards() {
-        let totalSpp = rawSPP.length;
+        // Filter data master SPP dan Pengiriman sesuai rentang waktu yang dipilih
+        let filteredSPP = rawSPP.filter(spp => isWithinFilter(spp.rawTimestampMs));
+        let filteredShipments = rawShipments.filter(ship => isWithinFilter(ship.rawTimestampMs));
+
+        let totalSpp = filteredSPP.length;
         let selesaiTepat = 0;
         let selesaiTelat = 0;
         let totalReady = 0;
         let kendala = 0;
         
-        rawSPP.forEach(spp => {
+        filteredSPP.forEach(spp => {
             // Evaluasi Waktu & Target
             if (spp.status === 'Selesai' || spp.status === 'Selesai Awal') selesaiTepat++;
             else if (spp.status === 'Telat Selesai') selesaiTelat++;
@@ -348,7 +412,7 @@
         // Update UI
         document.getElementById('val-total-spp').innerText = totalSpp;
         document.getElementById('val-ready').innerText = totalReady;
-        document.getElementById('val-shipped').innerText = rawShipments.length;
+        document.getElementById('val-shipped').innerText = filteredShipments.length;
         document.getElementById('val-kendala').innerText = kendala;
         
         document.getElementById('val-efisiensi').innerText = efisiensiRate + "%";
@@ -358,9 +422,10 @@
     }
 
     // ==========================================
-    // 5. RENDER LIVE INFO (Hari Ini) & STOPPAGE
+    // 6. RENDER LIVE INFO (Hari Ini) & STOPPAGE
     // ==========================================
     function renderLiveUpdates() {
+        // Panel Live ini khusus hari ini, jadi tidak dipengaruhi oleh dropdown filter waktu
         const todayStr = new Date().toDateString();
 
         // A. Filter Operator Online / Aktif Hari Ini
@@ -401,7 +466,7 @@
     }
 
     // ==========================================
-    // 6. RENDER CHARTS
+    // 7. RENDER CHARTS
     // ==========================================
     Chart.defaults.color = '#94a3b8';
     Chart.defaults.font.family = "'Segoe UI', sans-serif";
@@ -411,8 +476,10 @@
         const ctx = document.getElementById('chartTrend').getContext('2d');
         if(chartTrendInst) chartTrendInst.destroy();
 
+        let filteredSPP = rawSPP.filter(spp => isWithinFilter(spp.rawTimestampMs));
         let productCount = {};
-        rawSPP.forEach(spp => {
+        
+        filteredSPP.forEach(spp => {
             if (['Selesai', 'Selesai Awal', 'Telat Selesai'].includes(spp.status) && !spp.isSPL) {
                 productCount[spp.product] = (productCount[spp.product] || 0) + 1;
             }
@@ -450,8 +517,10 @@
         const ctx = document.getElementById('chartStatus').getContext('2d');
         if(chartStatusInst) chartStatusInst.destroy();
 
+        let filteredSPP = rawSPP.filter(spp => isWithinFilter(spp.rawTimestampMs));
         let proses = 0; let selesai = 0; let telat = 0; let kendala = 0; let pending = 0;
-        rawSPP.forEach(spp => {
+        
+        filteredSPP.forEach(spp => {
             if(spp.status === 'Proses') proses++;
             else if(spp.status === 'Selesai' || spp.status === 'Selesai Awal') selesai++;
             else if(spp.status === 'Telat Selesai') telat++;
@@ -481,8 +550,10 @@
         const ctx = document.getElementById('chartKpi').getContext('2d');
         if(chartKpiInst) chartKpiInst.destroy();
 
+        let filteredLogs = rawLogs.filter(log => isWithinFilter(log.timestampMs));
         let operatorPoints = {};
-        rawLogs.forEach(log => {
+        
+        filteredLogs.forEach(log => {
             if(!log.operator.toLowerCase().includes('dev')) {
                 operatorPoints[log.operator] = (operatorPoints[log.operator] || 0) + (log.processPoints || 10);
             }
@@ -516,14 +587,16 @@
     }
 
     // ==========================================
-    // 7. RENDER TABLES
+    // 8. RENDER TABLES
     // ==========================================
     function renderReadyTable() {
         const tbody = document.getElementById('tbody-ready');
         tbody.innerHTML = '';
         
+        let filteredSPP = rawSPP.filter(spp => isWithinFilter(spp.rawTimestampMs));
         let stockMap = {};
-        rawSPP.forEach(spp => {
+        
+        filteredSPP.forEach(spp => {
             if (['Selesai', 'Selesai Awal', 'Telat Selesai'].includes(spp.status) && !spp.isShipped && !spp.isSPL) {
                 stockMap[spp.product] = (stockMap[spp.product] || 0) + 1;
             }
@@ -531,7 +604,7 @@
 
         let stockArr = Object.entries(stockMap).sort((a,b) => b[1] - a[1]);
         if(stockArr.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--text-muted); padding:20px;">Gudang Kosong / Belum ada produk ready.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--text-muted); padding:20px;">Gudang Kosong / Belum ada produk ready di rentang waktu ini.</td></tr>`;
             return;
         }
 
@@ -547,12 +620,14 @@
         const tbody = document.getElementById('tbody-shipped');
         tbody.innerHTML = '';
 
-        if(rawShipments.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Belum ada data pengiriman logistik.</td></tr>`;
+        let filteredShipments = rawShipments.filter(ship => isWithinFilter(ship.rawTimestampMs));
+
+        if(filteredShipments.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Belum ada data pengiriman logistik di rentang waktu ini.</td></tr>`;
             return;
         }
 
-        let latestShipments = rawShipments.slice(0, 15);
+        let latestShipments = filteredShipments.slice(0, 15);
         
         latestShipments.forEach(ship => {
             tbody.innerHTML += `<tr>
@@ -565,7 +640,7 @@
     }
 
     // ==========================================
-    // 8. FULLSCREEN PRESENTATION MODE
+    // 9. FULLSCREEN PRESENTATION MODE
     // ==========================================
     function toggleFullScreen() {
         if (!document.fullscreenElement) {
